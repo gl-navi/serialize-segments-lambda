@@ -243,3 +243,4 @@ def encode_audio_segment(audio_segment: AudioSegment) -> str:
     audio_segment.export(buffer, format="mp3")  # Export as MP3 format
     encoded_audio = base64.b64encode(buffer.getvalue()).decode('utf-8')  # Encode and convert to string
     return encoded_audio
+
