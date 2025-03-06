@@ -1,0 +1,79 @@
+version: 0.2  # Specifies the AWS CodeBuild build specification version.
+
+phases:
+  install:
+    commands:
+      - "echo Installing/Upgrading aws-sam-cli"  # Prints a message indicating the installation of AWS SAM CLI.
+      - "pip install --upgrade aws-sam-cli"  # Installs or upgrades AWS SAM CLI to the latest version.
+
+  pre_build:
+    commands:
+      - "echo Installing dependencies..."  # Prints a message indicating that dependencies are being installed.
+      - "pip install -r hello_world/requirements.txt -t hello_world/"  # Installs dependencies listed in `requirements.txt` inside the `hello_world/` directory.
+
+  build:
+    commands:
+      - "echo Moving files out of hello_world to root..."
+      - "mv hello_world/* . || echo 'No files to move'"
+      # Moves all files inside hello_world to the root directory
+
+      - "echo Removing empty hello_world directory..."
+      - "rm -rf hello_world"
+      # Deletes the now-empty hello_world directory
+
+      - "echo Zipping Lambda function and dependencies"
+      - "zip -r function.zip . -x '*.git*' '.aws-sam/*' '.idea/*' 'events/*' 'tests/*'"
+      # Zips everything in the root directory, excluding unnecessary files
+
+      - "echo Ensuring function.zip was created..."
+      - "[ -f function.zip ] && echo 'function.zip exists' || (echo 'Error: function.zip missing!' && exit 1)"
+
+      - "echo Adding AppSpec file to function.zip..."
+      - "zip -g function.zip appspec.yml || (echo 'Error: Failed to add appspec.yml' && exit 1)"
+
+
+  post_build:
+    commands:
+      - "echo Updating Lambda function code..."
+      - "aws lambda update-function-code --function-name serialize_audio_segments_lambda --zip-file fileb://function.zip"
+      - "echo Waiting for function code update..."
+      - "sleep 10"
+      - "echo Publishing new Lambda version..."  # Prints a message indicating the publishing of a new Lambda version.
+      - "LAMBDA_VERSION=$(aws lambda publish-version --function-name serialize_audio_segments_lambda --query 'Version' --output text)"
+        # Publishes a new version of the Lambda function and stores the version number in `LAMBDA_VERSION`.
+      - "echo Retrieved Lambda Version: $LAMBDA_VERSION"  # Prints the retrieved Lambda version.
+      - |
+        if [ -z "$LAMBDA_VERSION" ]; then 
+          echo "Error: LAMBDA_VERSION is empty"; 
+          exit 1; 
+        fi  
+        # Checks if `LAMBDA_VERSION` is empty. If it is, prints an error and exits with a failure.
+
+      - "echo Updating AppSpec file with new version..."  # Prints a message indicating that the `appspec.yml` file is being updated.
+      - "sed -i \"s/{{CURRENT_VERSION}}/$LAMBDA_VERSION/g\" appspec.yml"  # Replaces `{{CURRENT_VERSION}}` placeholder with the new Lambda version.
+      - "sed -i \"s/{{TARGET_VERSION}}/$LAMBDA_VERSION/g\" appspec.yml"  # Replaces `{{TARGET_VERSION}}` placeholder with the new Lambda version.
+
+      - "echo Checking if alias exists..."  # Prints a message indicating the alias existence check.
+      - "ALIAS_EXISTS=$(aws lambda list-aliases --function-name serialize_audio_segments_lambda --query \"Aliases[?Name=='prod'].Name\" --output text)"
+        # Checks if a Lambda alias named `prod` exists for the function.
+
+      - |
+        if [ -z "$ALIAS_EXISTS" ]; then 
+          echo "Alias does not exist, creating..."; 
+          aws lambda create-alias --function-name serialize_audio_segments_lambda --name prod --function-version $LAMBDA_VERSION;
+        else 
+          echo "Alias exists, updating..."; 
+          aws lambda update-alias --function-name serialize_audio_segments_lambda --name prod --function-version $LAMBDA_VERSION;
+        fi  
+        # If the alias `prod` does not exist, it creates it pointing to the new Lambda version.
+        # If the alias exists, it updates it to point to the new Lambda version.
+
+      - "echo Waiting for Lambda version to be available..."  # Prints a message indicating a waiting period.
+      - "sleep 10"  # Waits for 10 seconds to ensure the Lambda function version is available.
+      - "echo Deployment complete."  # Prints a message indicating the completion of the deployment.
+
+artifacts:
+  files:
+    - function.zip  # Specifies that `function.zip` should be included in the build artifacts.
+    - appspec.yml  # Specifies that `appspec.yml` should be included in the build artifacts.
+  discard-paths: yes  # Ensures only the specified files are included in the artifact, without preserving directory structure.

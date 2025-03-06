@@ -1,0 +1,9 @@
+version: 0.0
+Resources:
+  - myLambdaFunction:
+      Type: AWS::Lambda::Function
+      Properties:
+        Name: "serialize_audio_segments_lambda"
+        Alias: "prod"
+        CurrentVersion: "{{CURRENT_VERSION}}"
+        TargetVersion: "{{TARGET_VERSION}}"
