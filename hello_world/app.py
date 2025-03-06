@@ -165,7 +165,6 @@ def get_clip_buffer(original_sound_bytes: bytes,
 
     return sound_buffer
 
-
 def extract_first_subdirectory(key: str) -> str:
     match = re.match(r'([^/]+)/', key)
     if match:
